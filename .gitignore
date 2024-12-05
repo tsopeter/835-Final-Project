@@ -1,3 +1,4 @@
 
 *.tiff
 /dataset_aug
+*.zip
