@@ -67,3 +67,19 @@ class ResidualEncoder(nn.Module):
         x = self.avgpool(x)
         x = torch.flatten(x, 1)  # Flatten for the fully connected layers
         return x
+    
+class ResNet50(nn.Module):
+    def __init__(self, features=1000):  # Default num_classes for ImageNet
+        super(ResNet50, self).__init__()
+        # Define the encoder with residual layers
+        self.encoder = ResidualEncoder(ResidualBlock, [3, 4, 6, 3])  # ResNet-50 architecture
+        
+        # Fully connected layer for classification
+        self.fc = nn.Linear(512, features)
+    
+    def forward(self, x):
+        # Pass through encoder
+        x = self.encoder(x)
+        # Pass through fully connected layer
+        x = self.fc(x)
+        return x

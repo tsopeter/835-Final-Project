@@ -3,6 +3,29 @@ import numpy as np
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
+from torchvision.transforms import functional as F, Compose, ToTensor
+
+class FastRotationLargeAngles:
+    def __init__(self, angle_range=(-90, 90), num_angles=100):
+        """
+        Fast rotation with a precomputed large number of angles.
+        Args:
+            angle_range (tuple): The range of angles (min_angle, max_angle).
+            num_angles (int): The number of discrete angles to precompute.
+        """
+        self.angles = torch.linspace(angle_range[0], angle_range[1], steps=num_angles).tolist()
+
+    def __call__(self, image, idx=None):
+        """
+        Apply rotation from precomputed angles.
+        Args:
+            image (PIL Image): The input image.
+            idx (int): Index for deterministic behavior (optional).
+        """
+        if idx is None:
+            idx = torch.randint(0, len(self.angles), (1,)).item()  # Random selection
+        angle = self.angles[idx % len(self.angles)]  # Cycle through angles
+        return F.rotate(image, angle)
 
 class NonAugmentedDataset(Dataset):
     def __init__(self, folder_path, transform=None):
@@ -45,12 +68,14 @@ class NonAugmentedDataset(Dataset):
 
         # Apply any specified transformations
         if self.transform:
-            image_tensor = self.transform(image_tensor)
+            image_tensor_2 = self.transform(image_tensor)
+        else:
+            image_tensor_2 = image_tensor
 
         # Get the corresponding temperature
         temperature = self.temperatures[idx]
 
-        return image_tensor, temperature
+        return (image_tensor, image_tensor_2), temperature
 
 class AugmentedDataset(Dataset):
     def __init__(self, folder_path, transform=None):
@@ -96,9 +121,11 @@ class AugmentedDataset(Dataset):
 
         # Apply any specified transformations
         if self.transform:
-            image_tensor = self.transform(image_tensor)
+            image_tensor_2 = self.transform(image_tensor)
+        else:
+            image_tensor_2 = image_tensor
 
         # Get the corresponding temperature
         temperature = self.temperatures[idx]
 
-        return image_tensor, temperature
+        return (image_tensor, image_tensor_2), temperature
