@@ -2,3 +2,4 @@
 *.tiff
 /dataset_aug
 *.zip
+deep_fcnn.pth
