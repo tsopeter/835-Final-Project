@@ -3,3 +3,4 @@
 /dataset_aug
 *.zip
 deep_fcnn.pth
+ANNModels/deep_fcnn.pth
