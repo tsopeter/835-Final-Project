@@ -342,3 +342,96 @@ def GetDataset(data_augmentation : bool = True, n_views : int = 4, device : str 
         MultiView(transforms, n_views=(n_views if data_augmentation else 1))
     ]), device=device
     )
+
+def resnet18_model_runner_get_basic_models():
+  from torchvision.models import resnet18
+  from torch.utils.data import random_split
+
+  class SupConModel(nn.Module):
+    def __init__(self, feature_dim : int = 128, device : str = "cpu")->None:
+      super(SupConModel, self).__init__()
+      self.backbone = resnet18(pretrained=True)
+      self.backbone.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+      self.backbone.fc    = nn.Identity()
+      self.linear = nn.Linear(512, feature_dim)
+      self.encoder = nn.Sequential(
+        self.backbone,
+        self.linear
+      ).to(device)
+      self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, X):
+      X = self.encoder(X)
+      X = self.softmax(X)
+
+      return X
+  
+  class RegressionModel(torch.nn.Module):
+    def __init__(self, supconmodel : SupConModel, features_dim : int = 128, device : str = 'cpu')->None:
+      super(RegressionModel, self).__init__()
+      self.encoder = supconmodel.encoder
+
+      for param in self.encoder.parameters():
+        param.requires_grad = False
+
+      self.head = nn.Sequential (
+        nn.Linear(features_dim, features_dim//2),
+        nn.ReLU(),
+        nn.Linear(features_dim//2, 1),
+      ).to(device)
+
+    def forward(self, X):
+      with torch.no_grad():
+        X = self.encoder(X)
+      X = self.head(X)
+      return X
+  
+  return SupConModel, RegressionModel
+
+def resnet18_model_runner_inference(path : str)->None:
+  from torchvision.models import resnet18
+  from torch.utils.data import random_split
+  
+  model = torch.load(path)
+  split_ratio = 0.9
+  batch_size = 64
+  sz = (126, 126)
+
+  # get dataset
+  dataset = GetDataset(data_augmentation=False)
+
+  # Get the total size of the dataset
+  dataset_size = len(dataset)
+
+  # Calculate sizes for training and validation splits
+  train_size = int(split_ratio * dataset_size)
+  val_size = dataset_size - train_size
+
+  # Perform the split
+  generator1 = torch.Generator().manual_seed(42)
+  train_dataset, val_dataset = random_split(dataset, [train_size, val_size], generator=generator1)
+
+  # Create DataLoaders for training and validation
+  #train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True )
+  val_loader   = DataLoader(val_dataset  , batch_size=batch_size, shuffle=False)
+
+  model.eval()
+  with torch.no_grad():
+    y_pred = []
+    y_test = []
+    for images, temperatures in val_loader:
+      N = images.shape[0]
+      V = images.shape[1]
+      images = images.reshape(N * V, 1, sz[0], sz[1])
+      temperatures = temperatures.unsqueeze(1).expand(-1, V).reshape(N * V, 1)
+      pred = model(images)
+
+      y_pred.append(pred.squeeze().cpu().detach().numpy())
+      y_test.append(temperatures.squeeze().cpu().detach().numpy())
+      
+  y_pred = np.array(y_pred).flatten()
+  y_test = np.array(y_test).flatten()
+
+  return y_pred, y_test
+
+
