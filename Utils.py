@@ -240,7 +240,7 @@ class CustomDataset(Dataset):
       self.raw = prev
       return np.array(X), np.array(y)
     
-def GetDataset(data_augmentation : bool = True):
+def GetDataset(data_augmentation : bool = True, n_views : int = 4):
     # Load Kaggle dataset
     path = kagglehub.dataset_download("juanda220485/synthetic-dataset-of-speckle-images")
     print("Path to dataset files:", path)
@@ -252,9 +252,9 @@ def GetDataset(data_augmentation : bool = True):
             GaussianNoise(mean=0.0, sigma=(1, 15), clamp=255),
             lambda x : x / 255.0,
             ImageMask(sz=(126, 126)),
-            RandomRotationTensor(degrees=360, samples=128),
+            #RandomCut((64, 64), prob=0.3),
             RandomFlip(prob=0.667),
-            RandomCut((64, 64))
+            RandomRotationTensor(degrees=360, samples=128),
         ])
     else:
       transforms = torchvision.transforms.Compose([
@@ -268,6 +268,6 @@ def GetDataset(data_augmentation : bool = True):
 
 
     return CustomDataset(path, transform=torchvision.transforms.Compose([
-        MultiView(transforms, n_views=(4 if data_augmentation else 1))
+        MultiView(transforms, n_views=(n_views if data_augmentation else 1))
     ])
     )
