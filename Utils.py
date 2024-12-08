@@ -11,6 +11,64 @@ import os
 from PIL import Image
 import random
 
+def ReadEncoderData(path : str)->None:
+
+  def numpy_read(path : str):
+    loss_values = np.load(path)
+    return np.arange(1, len(loss_values)+1), loss_values
+
+  def string_read(path : str):
+    loss_values = []
+
+    with open(path, 'r') as file:
+      for line in file:
+        if "Loss:" in line and "Validation" not in line:
+          loss_values.append(float(line.split("Loss:")[1].strip()))
+    loss_values = np.array(loss_values)
+    num_epochs_r = np.arange(1, len(loss_values)+1)
+
+    return num_epochs_r, loss_values
+  
+  for filename in sorted(os.listdir(path)):
+    if filename.endswith(".txt"):
+      return string_read(os.path.join(path, filename))
+    elif filename.endswith(".npy"):
+      return numpy_read(os.path.join(path, filename))
+  raise ValueError("Data does not exist in path")
+
+def ReadRegressorData(path : str):
+  def string_read(path : str):
+    mse_values = []
+    validation_mse_values = []
+    validation_r2_values = []
+
+    with open(path, 'r') as file:
+      for line in file:
+        if "MSE :" in line and "Validation" not in line:
+          mse_values.append(float(line.split("MSE :")[1].strip()))
+        elif "Validation: MSE :" in line:
+          validation_mse_values.append(float(line.split("Validation: MSE :")[1].strip()))
+        elif "Validation R2:" in line:
+          validation_r2_values.append(float(line.split("Validation R2:")[1].strip()))
+    mse_values = np.array(mse_values)
+    validation_mse_values = np.array(validation_mse_values)
+    validation_r2_values = np.array(validation_r2_values)
+    num_epochs_r = np.arange(1, len(mse_values)+1)
+
+    return num_epochs_r, mse_values, validation_mse_values, validation_r2_values
+  
+  for filename in sorted(os.listdir(path)):
+    if filename.endswith(".txt"):
+      return string_read(os.path.join(path, filename))
+    elif filename.endswith("train_losses.npy"):
+      mse_values = np.load(os.path.join(path, filename))
+    elif filename.endswith("val_losses.npy"):
+      validation_mse_values = np.load(os.path.join(path, filename))
+    elif filename.endswith("val_r2.npy"):
+      r2_values = np.load(os.path.join(path, filename))
+  
+  return np.arange(1, len(mse_values)+1), mse_values, validation_mse_values, r2_values
+
 def DataLoader2Numpy(dataloader : DataLoader)->np.ndarray:
   X = []
   y = []
