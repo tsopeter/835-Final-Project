@@ -3,21 +3,31 @@ import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms.functional as vF
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import v2
-from torchvision.models import mobilenet_v2, mobilenet_v3_large, vgg19, vgg16, resnet50, resnet18
-from timm.models.swin_transformer import SwinTransformer
-from sklearn.linear_model import LinearRegression
 import kagglehub
 import numpy as np
 import os
 from PIL import Image
-from matplotlib import pyplot as plt
-from sklearn.metrics import r2_score
-from losses import SupConLoss
-from torch.nn import TripletMarginLoss
 import random
 
+def DataLoader2Numpy(dataloader : DataLoader)->np.ndarray:
+  X = []
+  y = []
+  for images, temps in dataloader:
+    N = images.shape[0]
+    V = images.shape[1]
+    S = images.shape[-1]
+    images = images.reshape(N * V, S, S)
+    temps  = temps.reshape(N * V)
+    
+    X.append(images.cpu().detach().numpy())
+    y.append(temps.cpu().detach().numpy())
+
+  X, y = np.array(X), np.array(y)
+  X = X.reshape(np.prod(X.shape[0:2]), S, S)
+  y = y.flatten()
+  return X, y
 
 class ImageMask():
   def __init__(self, sz : tuple, fit : bool = True, device : str = "cuda:0")->None:
