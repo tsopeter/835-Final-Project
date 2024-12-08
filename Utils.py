@@ -20,7 +20,7 @@ import random
 
 
 class ImageMask():
-  def __init__(self, sz : tuple, fit : bool = True)->None:
+  def __init__(self, sz : tuple, fit : bool = True, device : str = "cuda:0")->None:
     """
     Args:
         sz (tuple): Size of image
@@ -29,6 +29,7 @@ class ImageMask():
     self.height = sz[0]
     self.width  = sz[1]
     self.radius = (self.height if self.height < self.width else self.width) / 2
+    self.device = device
 
     y, x = np.ogrid[:self.height, :self.width]
 
@@ -39,7 +40,7 @@ class ImageMask():
     distance_from_center = (y - center_y)**2 + (x - center_x)**2
     self.mask = distance_from_center <= self.radius**2
 
-    self.mask = torch.tensor(self.mask)
+    self.mask = torch.tensor(self.mask, device=device)
 
   def __call__(self, image):
     mask = self.mask
@@ -71,13 +72,14 @@ class RandomCrop():
     return torch.stack(crops)
 
 class GaussianNoise():
-  def __init__(self, mean : float | list | tuple = 0.0, sigma : float | list | tuple = 1.0, clamp : float = 1.0, mode : int = 0)->None:
+  def __init__(self, mean : float | list | tuple = 0.0, sigma : float | list | tuple = 1.0, clamp : float = 1.0, mode : int = 0, device : str = "cuda:0")->None:
     """
     Args:
         mean (float, list, optional): mean of gaussian distribution
         sigma (float, list, optional): standard deviation of gaussian distribution
         mode (int, optional): Random (slower) or Iterative (faster)
     """
+    self.device = device
     if isinstance(mean, tuple):
       self.means = np.linspace(mean[0], mean[1], 16)
     else:
@@ -105,7 +107,7 @@ class GaussianNoise():
     params = self.pairs[idx % self.samples,:]  # Cycle through angles
 
     # Add Gaussian noise to the input tensor
-    noisy_tensor = image + torch.normal(mean=params[0], std=params[1], size=image.size())
+    noisy_tensor = image + torch.normal(mean=params[0], std=params[1], size=image.size(), device=self.device)
 
     noisy_tensor = torch.clamp(noisy_tensor, 0.0, self.clamp)
     return noisy_tensor
@@ -187,7 +189,7 @@ class RandomCut():
     return image
 
 class CustomDataset(Dataset):
-    def __init__(self, folder_path, transform=None):
+    def __init__(self, folder_path, device : str = "cpu", transform=None):
         """
         Args:
             folder_path (str): Path to the dataset folder.
@@ -199,6 +201,7 @@ class CustomDataset(Dataset):
         self.images       = []
         self.temperatures = []
         self.raw          = False
+        self.device       = device
 
         for filename in sorted(os.listdir(folder_path)):
             if filename.endswith(".tiff"):
@@ -208,8 +211,8 @@ class CustomDataset(Dataset):
                 temperature = float(filename.split('_')[-1].replace('C.tiff', ''))
                 self.temperatures.append(temperature)
 
-        self.temperatures = torch.tensor(self.temperatures, dtype=torch.float32)
-        self.images       = torch.tensor(np.array(self.images))
+        self.temperatures = torch.tensor(self.temperatures, dtype=torch.float32, device=device)
+        self.images       = torch.tensor(np.array(self.images), device=device)
 
     def __len__(self):
         return len(self.image_paths)
@@ -240,7 +243,7 @@ class CustomDataset(Dataset):
       self.raw = prev
       return np.array(X), np.array(y)
     
-def GetDataset(data_augmentation : bool = True, n_views : int = 4):
+def GetDataset(data_augmentation : bool = True, n_views : int = 4, device : str = "cuda:0"):
     # Load Kaggle dataset
     path = kagglehub.dataset_download("juanda220485/synthetic-dataset-of-speckle-images")
     print("Path to dataset files:", path)
@@ -249,9 +252,9 @@ def GetDataset(data_augmentation : bool = True, n_views : int = 4):
     if data_augmentation:
         transforms = torchvision.transforms.Compose([
             lambda x : x.unsqueeze(0),
-            GaussianNoise(mean=0.0, sigma=(1, 15), clamp=255),
+            GaussianNoise(mean=0.0, sigma=(1, 15), clamp=255, device=device),
             lambda x : x / 255.0,
-            ImageMask(sz=(126, 126)),
+            ImageMask(sz=(126, 126), device=device),
             #RandomCut((64, 64), prob=0.3),
             RandomFlip(prob=0.667),
             RandomRotationTensor(degrees=360, samples=128),
@@ -259,9 +262,9 @@ def GetDataset(data_augmentation : bool = True, n_views : int = 4):
     else:
       transforms = torchvision.transforms.Compose([
             lambda x : x.unsqueeze(0),
-            GaussianNoise(mean=0.0, sigma=(1, 15), clamp=255),
+            GaussianNoise(mean=0.0, sigma=(1, 15), clamp=255, device=device),
             lambda x : x / 255.0,
-            ImageMask(sz=(126, 126)),
+            ImageMask(sz=(126, 126), device=device),
             RandomRotationTensor(degrees=360, samples=128),
         ])
       
@@ -269,5 +272,5 @@ def GetDataset(data_augmentation : bool = True, n_views : int = 4):
 
     return CustomDataset(path, transform=torchvision.transforms.Compose([
         MultiView(transforms, n_views=(n_views if data_augmentation else 1))
-    ])
+    ]), device=device
     )
