@@ -470,51 +470,6 @@ def resnet18_model_runner_get_basic_models():
   
   return SupConModel, RegressionModel
 
-def linear_regression_model(noisy_dataset : bool = False, N : int = 1):
-  from sklearn.linear_model import LinearRegression
-  from torch.utils.data import random_split
-  model = LinearRegression()
-
-  split_ratio = 0.9
-  batch_size  = 1
-  dataset = GetExtremelyNoisyDataset(data_augmentation=False) if noisy_dataset else \
-            GetDataset(data_augmentation=False)
-
-  # Get the total size of the dataset
-  dataset_size = len(dataset)
-
-  # Calculate sizes for training and validation splits
-  train_size = int(split_ratio * dataset_size)
-  val_size = dataset_size - train_size
-
-  # Perform the split
-  generator1 = torch.Generator().manual_seed(42)
-  train_dataset, val_dataset = random_split(dataset, [train_size, val_size], generator=generator1)
-
-  # Create DataLoaders for training and validation
-  train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True )
-  val_loader   = DataLoader(val_dataset  , batch_size=batch_size, shuffle=False)
-
-  Xt, yt   = DataLoader2Numpy(train_loader)
-  Xt = Xt.reshape(len(Xt), np.prod(Xt.shape[1:]))
-
-  model.fit(Xt, yt)
-
-  y_pred = []
-  y_test = []
-  for _ in range(N):
-    Xv, yv   = DataLoader2Numpy(val_loader)
-    Xv = Xv.reshape(len(Xv), np.prod(Xv.shape[1:]))
-
-    pred = model.predict(Xv)
-    y_pred.append(pred)
-    y_test.append(yv)
-
-  y_pred = np.array(y_pred).flatten()
-  y_test = np.array(y_test).flatten()
-
-  return y_pred, y_test
-
 def model_runner_interface(path : str, noisy_dataset : bool = False, N : int = 1):
   from torch.utils.data import random_split
   
@@ -557,6 +512,49 @@ def model_runner_interface(path : str, noisy_dataset : bool = False, N : int = 1
         y_pred.append(pred.squeeze().cpu().detach().numpy())
         y_test.append(temperatures.squeeze().cpu().detach().numpy())
       
+  y_pred = np.array(y_pred).flatten()
+  y_test = np.array(y_test).flatten()
+
+  return y_pred, y_test
+
+def sklearn_regression_model_runner(model, noisy_dataset : bool = False, N : int = 1):
+  from torch.utils.data import random_split
+
+  split_ratio = 0.9
+  batch_size  = 1
+  dataset = GetExtremelyNoisyDataset(data_augmentation=False) if noisy_dataset else \
+            GetDataset(data_augmentation=False)
+
+  # Get the total size of the dataset
+  dataset_size = len(dataset)
+
+  # Calculate sizes for training and validation splits
+  train_size = int(split_ratio * dataset_size)
+  val_size = dataset_size - train_size
+
+  # Perform the split
+  generator1 = torch.Generator().manual_seed(42)
+  train_dataset, val_dataset = random_split(dataset, [train_size, val_size], generator=generator1)
+
+  # Create DataLoaders for training and validation
+  train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True )
+  val_loader   = DataLoader(val_dataset  , batch_size=batch_size, shuffle=False)
+
+  Xt, yt   = DataLoader2Numpy(train_loader)
+  Xt = Xt.reshape(len(Xt), np.prod(Xt.shape[1:]))
+
+  model.fit(Xt, yt)
+
+  y_pred = []
+  y_test = []
+  for _ in range(N):
+    Xv, yv   = DataLoader2Numpy(val_loader)
+    Xv = Xv.reshape(len(Xv), np.prod(Xv.shape[1:]))
+
+    pred = model.predict(Xv)
+    y_pred.append(pred)
+    y_test.append(yv)
+
   y_pred = np.array(y_pred).flatten()
   y_test = np.array(y_test).flatten()
 
