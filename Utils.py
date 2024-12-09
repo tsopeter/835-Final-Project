@@ -343,9 +343,91 @@ def GetDataset(data_augmentation : bool = True, n_views : int = 4, device : str 
     ]), device=device
     )
 
+def GetExtremelyNoisyDataset(data_augmentation : bool, device : str = "cuda:0"):
+    # data_augmentation isn't used, just to keep it consistent
+    # Load Kaggle dataset
+    path = kagglehub.dataset_download("juanda220485/synthetic-dataset-of-speckle-images")
+    print("Path to dataset files:", path)
+
+    transforms = torchvision.transforms.Compose([
+      lambda x : x.unsqueeze(0),
+      GaussianNoise(mean=128.0, sigma=(1, 30), clamp=255, device=device),
+      lambda x : x / 255.0,
+      ImageMask(sz=(126, 126), device=device),
+      RandomRotationTensor(degrees=360, samples=128),
+    ])
+      
+    return CustomDataset(path, transform=torchvision.transforms.Compose([
+        MultiView(transforms, n_views=1)
+    ]), device=device
+    )
+
+def shufflenetv2_x1_model_runner_get_basic_model():
+  from torchvision.models import shufflenet_v2_x1_0
+
+  class SupConModel(nn.Module):
+    def __init__(self, feature_dim : int = 128, device : str = "cpu")->None:
+      super(SupConModel, self).__init__()
+      self.backbone = shufflenet_v2_x1_0(pretrained=True)
+      self.backbone.conv1[0] = nn.Conv2d(1, 24, kernel_size=3, stride=2, padding=1)
+      self.backbone.classifier     = nn.Identity().to(device)
+      self.linear = nn.Linear(1000, feature_dim)
+      self.encoder = nn.Sequential(
+        self.backbone,
+        self.linear
+      ).to(device)
+
+    def forward(self, X):
+      X = self.encoder(X)
+      X = F.normalize(X, dim=1)
+
+      return X
+
+  class RegressionModel(torch.nn.Module):
+    def __init__(self, supconmodel : SupConModel, features_dim : int = 128, device : str = 'cpu')->None:
+      super(RegressionModel, self).__init__()
+      self.encoder = supconmodel.encoder
+
+      for param in self.encoder.parameters():
+        param.requires_grad = False
+
+      self.head = nn.Sequential (
+        nn.Linear(features_dim, features_dim//2),
+        nn.ReLU(),
+        nn.Linear(features_dim//2, 1),
+      ).to(device)
+
+    def forward(self, X):
+      with torch.no_grad():
+        X = self.encoder(X)
+      X = self.head(X)
+
+      return X
+    
+  return SupConModel, RegressionModel
+
+def resnet18_baseline_model_runner_get_basic_model():
+  from torchvision.models import resnet18
+
+  class ResNet18E(nn.Module):
+    def __init__(self, device : str = "cpu")->None:
+      super(ResNet18E, self).__init__()
+      self.backbone = resnet18(pretrained=True)
+      self.backbone.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+      self.backbone.fc    = nn.Identity()
+      self.linear = nn.Linear(512, 1)
+      self.encoder = nn.Sequential(
+        self.backbone,
+        self.linear
+      ).to(device)
+
+    def forward(self, X):
+      return self.encoder(X)
+    
+  return ResNet18E
+
 def resnet18_model_runner_get_basic_models():
   from torchvision.models import resnet18
-  from torch.utils.data import random_split
 
   class SupConModel(nn.Module):
     def __init__(self, feature_dim : int = 128, device : str = "cpu")->None:
@@ -388,8 +470,7 @@ def resnet18_model_runner_get_basic_models():
   
   return SupConModel, RegressionModel
 
-def resnet18_model_runner_inference(path : str)->None:
-  from torchvision.models import resnet18
+def model_runner_interface(path : str, noisy_dataset : bool = False):
   from torch.utils.data import random_split
   
   model = torch.load(path)
@@ -398,7 +479,8 @@ def resnet18_model_runner_inference(path : str)->None:
   sz = (126, 126)
 
   # get dataset
-  dataset = GetDataset(data_augmentation=False)
+  dataset = GetExtremelyNoisyDataset(data_augmentation=False) if noisy_dataset else \
+            GetDataset(data_augmentation=False)
 
   # Get the total size of the dataset
   dataset_size = len(dataset)
@@ -433,5 +515,4 @@ def resnet18_model_runner_inference(path : str)->None:
   y_test = np.array(y_test).flatten()
 
   return y_pred, y_test
-
 
