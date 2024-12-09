@@ -559,3 +559,20 @@ def sklearn_regression_model_runner(model, noisy_dataset : bool = False, N : int
   y_test = np.array(y_test).flatten()
 
   return y_pred, y_test
+
+class PairDet:
+  def __init__(self, threshold : float = 1.0):
+    self.T = threshold
+
+  def __call__(self, y : torch.Tensor)->torch.Tensor:
+    # A positive pair is when |yi - yj| <= T, were i, j in N
+    # This returns a square matrix of (N, N) where
+    # each row is an image, and each column where Aij = 1 is a positive pair
+    #
+
+    # replicate y, such that [y, y, ..., y] for N columns
+    N  = len(y)
+    Y  = y.expand(-1, N)
+    Q  = torch.abs(Y - Y.T) <= self.T
+
+    return Q
